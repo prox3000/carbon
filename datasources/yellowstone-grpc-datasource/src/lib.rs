@@ -8,7 +8,7 @@ use {
         error::CarbonResult,
         metrics::MetricsCollection,
     },
-    chrono::Utc,
+    chrono::{DateTime, Utc},
     futures::{sink::SinkExt, StreamExt},
     solana_account::Account,
     solana_pubkey::Pubkey,
@@ -232,20 +232,20 @@ impl Datasource for YellowstoneGrpcGeyserClient {
                                     let message = match message_result {
                                         Ok(Some(msg)) => msg,
                                         Ok(None) => {
-                                            log::error!("Stream closed");
+                                            log::warn!("Stream closed");
                                             if last_disconnect_time.is_none() {
                                                 last_disconnect_time = Some(Utc::now());
                                                 last_slot_before_disconnect = Some(last_processed_slot);
-                                                log::error!("Disconnected at slot {}", last_processed_slot);
+                                                log::warn!("Disconnected at slot {}", last_processed_slot);
                                             }
                                             break;
                                         }
                                         Err(_) => {
-                                            log::error!("Stream timeout - no messages for 30 seconds");
+                                            log::warn!("Stream timeout - no messages for 30 seconds");
                                             if last_disconnect_time.is_none() {
                                                 last_disconnect_time = Some(Utc::now());
                                                 last_slot_before_disconnect = Some(last_processed_slot);
-                                                log::error!("Disconnected at slot {} (timeout)", last_processed_slot);
+                                                log::warn!("Disconnected at slot {} (timeout)", last_processed_slot);
                                             }
                                             break;
                                         }
