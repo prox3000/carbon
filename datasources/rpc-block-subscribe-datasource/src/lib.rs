@@ -71,6 +71,10 @@ impl Datasource for RpcBlockSubscribe {
         metrics: Arc<MetricsCollection>,
     ) -> CarbonResult<()> {
         let mut reconnection_attempts = 0;
+        let mut last_processed_slot = 0u64;
+        let mut last_disconnect_time = None;
+        let mut last_slot_before_disconnect = None;
+        let disconnect_tx_clone = self.disconnect_notifier.clone();
 
         loop {
             if cancellation_token.is_cancelled() {
@@ -118,11 +122,6 @@ impl Datasource for RpcBlockSubscribe {
             };
 
             reconnection_attempts = 0;
-
-            let mut last_processed_slot = 0u64;
-            let mut last_disconnect_time = None;
-            let mut last_slot_before_disconnect = None;
-            let disconnect_tx_clone = self.disconnect_notifier.clone();
 
             loop {
                 tokio::select! {
