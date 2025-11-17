@@ -2,13 +2,13 @@ use {
     async_trait::async_trait,
     carbon_core::{
         datasource::{
-            AccountDeletion, AccountUpdate, Datasource, DatasourceId, TransactionUpdate, Update,
-            UpdateType,
+            AccountDeletion, AccountUpdate, Datasource, DatasourceDisconnection, DatasourceId,
+            TransactionUpdate, Update, UpdateType,
         },
         error::CarbonResult,
         metrics::MetricsCollection,
     },
-    chrono::{DateTime, Utc},
+    chrono::Utc,
     futures::{sink::SinkExt, StreamExt},
     solana_account::Account,
     solana_pubkey::Pubkey,
@@ -34,14 +34,6 @@ use {
     },
 };
 
-#[derive(Debug, Clone)]
-pub struct GrpcDisconnection {
-    pub disconnect_time: DateTime<Utc>,
-    pub last_slot_before_disconnect: u64,
-    pub first_slot_after_reconnect: u64,
-    pub missed_slots: u64,
-}
-
 #[derive(Debug)]
 pub struct YellowstoneGrpcGeyserClient {
     pub endpoint: String,
@@ -52,7 +44,7 @@ pub struct YellowstoneGrpcGeyserClient {
     pub block_filters: BlockFilters,
     pub account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
     pub geyser_config: YellowstoneGrpcClientConfig,
-    pub disconnect_notifier: Option<mpsc::Sender<GrpcDisconnection>>,
+    pub disconnect_notifier: Option<mpsc::Sender<DatasourceDisconnection>>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +87,7 @@ impl YellowstoneGrpcGeyserClient {
         block_filters: BlockFilters,
         account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
         geyser_config: YellowstoneGrpcClientConfig,
-        disconnect_notifier: Option<mpsc::Sender<GrpcDisconnection>>,
+        disconnect_notifier: Option<mpsc::Sender<DatasourceDisconnection>>,
     ) -> Self {
         YellowstoneGrpcGeyserClient {
             endpoint,
@@ -277,7 +269,8 @@ impl Datasource for YellowstoneGrpcGeyserClient {
                                                     {
                                                         let missed = if slot > last_slot { slot - last_slot } else { 0 };
 
-                                                        let disconnection = GrpcDisconnection {
+                                                        let disconnection = DatasourceDisconnection {
+                                                            source: "yellowstone-grpc".to_string(),
                                                             disconnect_time,
                                                             last_slot_before_disconnect: last_slot,
                                                             first_slot_after_reconnect: slot,

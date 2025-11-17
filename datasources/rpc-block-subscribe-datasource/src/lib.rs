@@ -1,4 +1,5 @@
-use carbon_core::datasource::{BlockDetails, DatasourceId};
+use carbon_core::datasource::{BlockDetails, DatasourceDisconnection, DatasourceId};
+use chrono::Utc;
 use solana_hash::Hash;
 use std::str::FromStr;
 
@@ -18,6 +19,7 @@ use {
         rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
     },
     std::sync::Arc,
+    tokio::sync::mpsc,
     tokio::sync::mpsc::Sender,
     tokio_util::sync::CancellationToken,
 };
@@ -46,13 +48,15 @@ impl Filters {
 pub struct RpcBlockSubscribe {
     pub rpc_ws_url: String,
     pub filters: Filters,
+    pub disconnect_notifier: Option<mpsc::Sender<DatasourceDisconnection>>,
 }
 
 impl RpcBlockSubscribe {
-    pub const fn new(rpc_ws_url: String, filters: Filters) -> Self {
+    pub const fn new(rpc_ws_url: String, filters: Filters, disconnect_notifier: Option<mpsc::Sender<DatasourceDisconnection>>) -> Self {
         Self {
             rpc_ws_url,
             filters,
+            disconnect_notifier,
         }
     }
 }
@@ -115,6 +119,11 @@ impl Datasource for RpcBlockSubscribe {
 
             reconnection_attempts = 0;
 
+            let mut last_processed_slot = 0u64;
+            let mut last_disconnect_time = None;
+            let mut last_slot_before_disconnect = None;
+            let disconnect_tx_clone = self.disconnect_notifier.clone();
+
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -129,10 +138,20 @@ impl Datasource for RpcBlockSubscribe {
                             Ok(Some(event)) => event,
                             Ok(None) => {
                                 log::error!("Block stream closed");
+                                if last_disconnect_time.is_none() {
+                                    last_disconnect_time = Some(Utc::now());
+                                    last_slot_before_disconnect = Some(last_processed_slot);
+                                    log::error!("Disconnected at slot {}", last_processed_slot);
+                                }
                                 break;
                             }
                             Err(_) => {
                                 log::error!("Block stream timeout - no messages for 30 seconds");
+                                if last_disconnect_time.is_none() {
+                                    last_disconnect_time = Some(Utc::now());
+                                    last_slot_before_disconnect = Some(last_processed_slot);
+                                    log::error!("Disconnected at slot {} (timeout)", last_processed_slot);
+                                }
                                 break;
                             }
                         };
@@ -140,6 +159,28 @@ impl Datasource for RpcBlockSubscribe {
                         match Some(block_event) {
                             Some(tx_event) => {
                                 let slot = tx_event.context.slot;
+
+                                if last_processed_slot > 0 {
+                                    if let (Some(disconnect_time), Some(last_slot)) =
+                                        (last_disconnect_time.take(), last_slot_before_disconnect.take())
+                                    {
+                                        let missed = if slot > last_slot { slot - last_slot } else { 0 };
+
+                                        let disconnection = DatasourceDisconnection {
+                                            source: "rpc-websocket".to_string(),
+                                            disconnect_time,
+                                            last_slot_before_disconnect: last_slot,
+                                            first_slot_after_reconnect: slot,
+                                            missed_slots: missed,
+                                        };
+
+                                        if let Some(tx) = &disconnect_tx_clone {
+                                            let _ = tx.try_send(disconnection);
+                                        }
+                                    }
+                                }
+
+                                last_processed_slot = slot;
 
                                 if let Some(block) = tx_event.value.block {
                                     let block_start_time = std::time::Instant::now();
