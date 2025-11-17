@@ -166,6 +166,8 @@ impl Datasource for RpcBlockSubscribe {
                                     {
                                         let missed = if slot > last_slot { slot - last_slot } else { 0 };
 
+                                        log::warn!("Reconnected: last_slot={}, new_slot={}, missed={}", last_slot, slot, missed);
+
                                         let disconnection = DatasourceDisconnection {
                                             source: "rpc-websocket".to_string(),
                                             disconnect_time,
@@ -175,7 +177,12 @@ impl Datasource for RpcBlockSubscribe {
                                         };
 
                                         if let Some(tx) = &disconnect_tx_clone {
-                                            let _ = tx.try_send(disconnection);
+                                            match tx.try_send(disconnection) {
+                                                Ok(_) => log::warn!("Disconnection event sent successfully"),
+                                                Err(e) => log::error!("Failed to send disconnection event: {:?}", e),
+                                            }
+                                        } else {
+                                            log::warn!("No disconnect channel configured");
                                         }
                                     }
                                 }
