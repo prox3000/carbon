@@ -121,8 +121,23 @@ impl Datasource for RpcBlockSubscribe {
                         log::info!("Cancellation requested, stopping subscription...");
                         return Ok(());
                     }
-                    block_event = block_stream.next() => {
-                        match block_event {
+                    block_event_result = tokio::time::timeout(
+                        Duration::from_secs(30),
+                        block_stream.next()
+                    ) => {
+                        let block_event = match block_event_result {
+                            Ok(Some(event)) => event,
+                            Ok(None) => {
+                                log::error!("Block stream closed");
+                                break;
+                            }
+                            Err(_) => {
+                                log::error!("Block stream timeout - no messages for 30 seconds");
+                                break;
+                            }
+                        };
+
+                        match Some(block_event) {
                             Some(tx_event) => {
                                 let slot = tx_event.context.slot;
 
