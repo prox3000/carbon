@@ -137,20 +137,20 @@ impl Datasource for RpcBlockSubscribe {
                         let block_event = match block_event_result {
                             Ok(Some(event)) => event,
                             Ok(None) => {
-                                log::error!("Block stream closed");
+                                log::warn!("Block stream closed");
                                 if last_disconnect_time.is_none() {
                                     last_disconnect_time = Some(Utc::now());
                                     last_slot_before_disconnect = Some(last_processed_slot);
-                                    log::error!("Disconnected at slot {}", last_processed_slot);
+                                    log::warn!("Disconnected at slot {}", last_processed_slot);
                                 }
                                 break;
                             }
                             Err(_) => {
-                                log::error!("Block stream timeout - no messages for 30 seconds");
+                                log::warn!("Block stream timeout - no messages for 30 seconds");
                                 if last_disconnect_time.is_none() {
                                     last_disconnect_time = Some(Utc::now());
                                     last_slot_before_disconnect = Some(last_processed_slot);
-                                    log::error!("Disconnected at slot {} (timeout)", last_processed_slot);
+                                    log::warn!("Disconnected at slot {} (timeout)", last_processed_slot);
                                 }
                                 break;
                             }
